@@ -46,7 +46,7 @@ def do(n, m):
     # MySQL connnection
     conn_mysql = pymysql.connect(host='localhost', port=3306, user=USERNAME, passwd=PASSWORD, db=DB_NAME)
     mdb = conn_mysql.cursor()
-    # Select page content in MySQLbr, called_nbr, lac
+    # Select page content in MySQL
     sql = "select serv_id, acc_nbr, etl_type_id, calling_nbr, called_nbr, lac, cell_id, month_no, " \
           "date_no, week_no, hour_no, start_time, end_time from {} limit {}, {}".format(TABLE_NAME, n, m)
     mdb.execute(sql)
@@ -68,10 +68,10 @@ def do(n, m):
         if item[2] in ["21", "31"]:
             rdb.incr('N_Call_{}'.format(item[1]))
         # Type = data
-        elif item[3] in ["22", "32"]:
+        elif item[2] in ["22", "32"]:
             rdb.incr('N_Data_{}'.format(item[1]))
         # Type = message
-        elif item[3] in ["24", "34"]:
+        elif item[2] in ["24", "34"]:
             rdb.incr('N_SMS_{}'.format(item[1]))
         # With location info(bad sensor | landline | so-on)
         if item[6] not in ["-1", "0"]:
@@ -130,7 +130,7 @@ if __name__ == '__main__':
             print(item.get())
         # CSV file output:
         print('CREATE CSV OUTPUT FILE')
-        with open(OUTPUT_CSV, "w") as csvfile:
+        with open(OUTPUT_CSV, "w", newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['acc_nbr', 'n_record', 'n_record_loc', 'n_contact', 'n_call', 'n_data', 'n_sms', 'q_value', 'n_uniq_loc'])
             acc_nbr_list = rdb.smembers('acc_nbr')
