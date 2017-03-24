@@ -3,6 +3,7 @@ import csv
 import time
 import redis
 import pymysql
+import datetime
 import itertools
 import multiprocessing
 
@@ -48,15 +49,19 @@ def do(n, m):
     mdb = conn_mysql.cursor()
     # Select page content in MySQL
     sql = "select serv_id, acc_nbr, etl_type_id, calling_nbr, called_nbr, lac, cell_id, month_no, " \
-          "date_no, week_no, hour_no, start_time, end_time from {} limit {}, {}".format(TABLE_NAME, n, m)
+          "date_no, week_no, hour_no, start_time, end_time, start_min, end_min from {} limit {}, {}".format(TABLE_NAME, n, m)
     mdb.execute(sql)
     if TIME_NOTE:
         # Record start time
         stime = time.time()
     # Task do
-    #   serv_id acc_nbr etl_type_id calling_nbr called_nbr  lac cell_id month_no    date_no week_no hour_no start_time  end_time
-    #   0       1       2           3           4           5   6       7           8       9       10      11          12
+    #   serv_id acc_nbr etl_type_id calling_nbr called_nbr  lac cell_id month_no    date_no week_no hour_no start_time  end_time    start_min   end_min
+    #   0       1       2           3           4           5   6       7           8       9       10      11          12          13          14
     for item in mdb:
+        # Get timestamp by month_no, date_no, hour_no
+        # strTimestamp = '{}{:0>2d}{}'.format(item[7], item[8], item[11])
+        # timestamp = time.mktime(datetime.datetime.strptime(strTimestamp, '%Y%m%d%H:%M:%S').timetuple())
+        # rdb.lpush('T_Interval_{}'.format(item[1]), timestamp)
         # Restore acc_nbr
         rdb.sadd('acc_nbr', item[1])
         # All records
@@ -67,6 +72,8 @@ def do(n, m):
         # Type = voice
         if item[2] in ["21", "31"]:
             rdb.incr('N_Call_{}'.format(item[1]))
+            # Calling duration Tcall
+            rdb.lpush('T_Call_{}'.format(item[1]), (item[14]-item[13]))
         # Type = data
         elif item[2] in ["22", "32"]:
             rdb.incr('N_Data_{}'.format(item[1]))
@@ -83,6 +90,16 @@ def do(n, m):
             # Number of diff location when contact
             loctemp = '{}|{}'.format(item[10], item[11])
             rdb.sadd('N_Uniq_Loc_{}'.format(item[1]), loctemp)
+        # Calculate time interval
+        # try:
+        #     lasttime = float(rdb.hget('timestamp', item[1]).decode('utf-8'))
+        #     print('timestamp', timestamp)
+        #     print('lasttime', lasttime)
+        #     rdb.lpush('T_Interval_{}'.format(item[1]), (timestamp-lasttime))
+        # except Exception as ex:
+        #     print(ex)
+        # rdb.hset('timestamp', item[1], timestamp)
+
     if TIME_NOTE:
         # Record finish time
         ftime = time.time()
@@ -94,7 +111,7 @@ def do(n, m):
 def init():
     global rdb
     # Clear Redis
-    rdb.flushall()
+    rdb.flushdb()
     if RESTORE_ACC_NBR:
         # Insert user nbr from csv file
         stime = time.time()
