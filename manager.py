@@ -197,8 +197,8 @@ if __name__ == '__main__':
                 count_contact = collections.Counter(list_contact)
                 for contactor in count_contact:
                     # print(contactor)
-                    rdb.sismember('net', contactor.decode('utf-8'))
-                    csvfile.write('| {} | {} | {} |\n'.format(acc_nbr, contactor.decode('utf-8'), count_contact[contactor]))
+                    if not rdb.sismember('net', contactor.decode('utf-8')):
+                        csvfile.write('| {} | {} | {} |\n'.format(acc_nbr, contactor.decode('utf-8'), count_contact[contactor]))
                 rdb.sadd('net', acc_nbr)
         print('NET CSV FILE CLOSE')
 
