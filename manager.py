@@ -3,8 +3,8 @@ import csv
 import time
 import redis
 import pymysql
-import datetime
 import itertools
+import collections
 import multiprocessing
 
 # Variables
@@ -17,6 +17,7 @@ PAGE_SIZE = 100
 # File
 NAME_CSV = r"D:\hk\mobility\acc_nbr_mon345.csv"
 OUTPUT_CSV = r"D:\hk\mobility\out.csv"
+OUTPUT_NET_CSV = r"D:\hk\mobility\out_net.csv"
 
 # MySQL Variables
 USERNAME = 'root'
@@ -43,13 +44,13 @@ def do(tab, n, m):
     global rdb
     stime, ftime, duration = 0, 0, 0
     pro_name = multiprocessing.current_process().name
-    print('> START: process-num = {} and range {} to {} in table {}'.format(pro_name, n, (n+m), tab))
+    print('> START: process-num = {} and range {} to {} in table {} when {}'.format(pro_name, n, m, tab, time.strftime('%Y-%m-%d %X', time.localtime())))
     # MySQL connnection
     conn_mysql = pymysql.connect(host='localhost', port=3306, user=USERNAME, passwd=PASSWORD, db=DB_NAME)
     mdb = conn_mysql.cursor()
     # Select page content in MySQL
     sql = "select serv_id, acc_nbr, etl_type_id, calling_nbr, called_nbr, lac, cell_id, month_no, " \
-          "date_no, week_no, hour_no, start_time, end_time, start_min, end_min from {} limit {}, {}".format(tab, n, m)
+          "date_no, week_no, hour_no, start_time, end_time, start_min, end_min from {} where id>={} and id<={}".format(tab, n, m)
     mdb.execute(sql)
     if TIME_NOTE:
         # Record start time
@@ -67,8 +68,12 @@ def do(tab, n, m):
         # All records
         rdb.incr('N_Record_{}'.format(item[1]))
         # Number of contacts
-        rdb.sadd('N_Contact_{}'.format(item[1]), item[3])
-        rdb.sadd('N_Contact_{}'.format(item[1]), item[4])
+        if item[1] != item[3]:
+            rdb.lpush('N_Contact_{}'.format(item[1]), item[3])
+        if item[1] != item[4]:
+            rdb.lpush('N_Contact_{}'.format(item[1]), item[4])
+        # rdb.sadd('N_Contact_{}'.format(item[1]), item[3])
+        # rdb.sadd('N_Contact_{}'.format(item[1]), item[4])
         # Type = voice
         if item[2] in ["21", "31"]:
             rdb.incr('N_Call_{}'.format(item[1]))
@@ -104,8 +109,8 @@ def do(tab, n, m):
         # Record finish time
         ftime = time.time()
         duration = ftime - stime
-        print('@ TIME: range {} to {} in table {} cost {}s'.format(n, (n+m), tab, duration))
-    print('# END: process-num = {} and range {} to {} in table {}'.format(pro_name, n, (n+m), tab))
+        print('@ TIME: range {} to {} in table {} cost {}s'.format(n, m, tab, duration))
+    print('# END: process-num = {} and range {} to {} in table {}'.format(pro_name, n, m, tab))
     return duration
 
 def init():
@@ -140,7 +145,11 @@ if __name__ == '__main__':
             page_num = (TOTAL_SIZE[num] + 1) // PAGE_SIZE
             for page in range(page_num):
                 start_item = page * PAGE_SIZE
-                result.append(pool.apply_async(func=do, args=(TABLE_NAME[num], start_item, PAGE_SIZE)))
+                if page == (page_num -1):
+                    end_item = TOTAL_SIZE[num]
+                else:
+                    end_item = start_item + PAGE_SIZE
+                result.append(pool.apply_async(func=do, args=(TABLE_NAME[num], start_item+1, start_item+PAGE_SIZE)))
         pool.close()
         pool.join()
         print('Finish')
@@ -150,6 +159,7 @@ if __name__ == '__main__':
         print('Total process num: {}'.format(len(result)))
         # CSV file output:
         print('CREATE CSV OUTPUT FILE')
+        print('> START when {}'.format(time.strftime('%Y-%m-%d %X', time.localtime())))
         with open(OUTPUT_CSV, "w", newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['acc_nbr', 'n_record', 'n_record_loc', 'n_contact', 'n_call', 'n_data', 'n_sms', 'q_value', 'n_uniq_loc'])
@@ -160,8 +170,9 @@ if __name__ == '__main__':
                 n_record = n_record.decode('utf-8') if n_record else 0
                 n_record_loc = rdb.get('N_Record_Loc_{}'.format(acc_nbr))
                 n_record_loc = n_record_loc.decode('utf-8') if n_record_loc else 0
-                n_contact = rdb.scard('N_Contact_{}'.format(acc_nbr))
-                n_contact = n_contact if n_contact else 0
+                list_contact = rdb.lrange('N_Contact_{}'.format(acc_nbr), 0, -1)
+                count_contact = collections.Counter(list_contact)
+                n_contact = len(count_contact)
                 n_call = rdb.get('N_Call_{}'.format(acc_nbr))
                 n_call = n_call.decode('utf-8') if n_call else 0
                 n_data = rdb.get('N_Data_{}'.format(acc_nbr))
@@ -174,6 +185,24 @@ if __name__ == '__main__':
                 n_uniq_loc = n_uniq_loc if n_uniq_loc else 0
                 writer.writerow([acc_nbr, n_record, n_record_loc, n_contact, n_call, n_data, n_sms, q_value, n_uniq_loc])
         print('CSV FILE CLOSE')
+        # CSV file output:
+        print('CREATE NET CSV OUTPUT FILE')
+        print('> START when {}'.format(time.strftime('%Y-%m-%d %X',time.localtime())))
+        with open(OUTPUT_NET_CSV, "w", newline='') as csvfile:
+            acc_nbr_list = rdb.smembers('acc_nbr')
+            for acc_nbr in acc_nbr_list:
+                acc_nbr = acc_nbr.decode('utf-8')
+                # print(acc_nbr)
+                list_contact = rdb.lrange('N_Contact_{}'.format(acc_nbr), 0, -1)
+                count_contact = collections.Counter(list_contact)
+                for contactor in count_contact:
+                    # print(contactor)
+                    rdb.sismember('net', contactor.decode('utf-8'))
+                    csvfile.write('| {} | {} | {} |\n'.format(acc_nbr, contactor.decode('utf-8'), count_contact[contactor]))
+                rdb.sadd('net', acc_nbr)
+        print('NET CSV FILE CLOSE')
+
+
     elif RUN_MODE == 'test':
         pool = multiprocessing.Pool(processes=PARALLEL_NUM)
         result = []
