@@ -11,7 +11,7 @@ import multiprocessing
 # RUN_MODE = 'init'
 RUN_MODE = 'development'
 PARALLEL_NUM = 4
-TOTAL_SIZE = 1000
+TOTAL_SIZE = [1000, 1000, 1000] # should match with $TABLE_NAME
 PAGE_SIZE = 100
 
 # File
@@ -22,7 +22,7 @@ OUTPUT_CSV = r"D:\hk\mobility\out.csv"
 USERNAME = 'root'
 PASSWORD = 'welcome'
 DB_NAME = 'dangchu'
-TABLE_NAME = 'pytab'
+TABLE_NAME = ['pytab', 'pytab', 'pytab']
 
 # Flag
 TIME_NOTE = True
@@ -39,17 +39,17 @@ def test(n):
     time.sleep(2)
     return 'return {}'.format(n)
 
-def do(n, m):
+def do(tab, n, m):
     global rdb
     stime, ftime, duration = 0, 0, 0
     pro_name = multiprocessing.current_process().name
-    print('> START: process-num = {} and range {} to {}'.format(pro_name, n, (n+m)))
+    print('> START: process-num = {} and range {} to {} in table {}'.format(pro_name, n, (n+m), tab))
     # MySQL connnection
     conn_mysql = pymysql.connect(host='localhost', port=3306, user=USERNAME, passwd=PASSWORD, db=DB_NAME)
     mdb = conn_mysql.cursor()
     # Select page content in MySQL
     sql = "select serv_id, acc_nbr, etl_type_id, calling_nbr, called_nbr, lac, cell_id, month_no, " \
-          "date_no, week_no, hour_no, start_time, end_time, start_min, end_min from {} limit {}, {}".format(TABLE_NAME, n, m)
+          "date_no, week_no, hour_no, start_time, end_time, start_min, end_min from {} limit {}, {}".format(tab, n, m)
     mdb.execute(sql)
     if TIME_NOTE:
         # Record start time
@@ -104,8 +104,8 @@ def do(n, m):
         # Record finish time
         ftime = time.time()
         duration = ftime - stime
-        print('@ TIME: range {} to {} cost {}s'.format(n, (n+m), duration))
-    print('# END: process-num = {} and range {} to {}'.format(pro_name, n, (n+m)))
+        print('@ TIME: range {} to {} in table {} cost {}s'.format(n, (n+m), tab, duration))
+    print('# END: process-num = {} and range {} to {} in table {}'.format(pro_name, n, (n+m), tab))
     return duration
 
 def init():
@@ -132,19 +132,22 @@ if __name__ == '__main__':
         pass
     elif RUN_MODE == 'development':
         result = []
-        # MySQL page number
-        page_num = (TOTAL_SIZE + 1) // PAGE_SIZE
         # Multi-process
         pool = multiprocessing.Pool(processes=PARALLEL_NUM)
-        for page in range(page_num):
-            start_item = page * PAGE_SIZE
-            result.append(pool.apply_async(func=do, args=(start_item, PAGE_SIZE)))
+        # Traversal $TABLE_NAME
+        for num in range(len(TABLE_NAME)):
+            # MySQL page number
+            page_num = (TOTAL_SIZE[num] + 1) // PAGE_SIZE
+            for page in range(page_num):
+                start_item = page * PAGE_SIZE
+                result.append(pool.apply_async(func=do, args=(TABLE_NAME[num], start_item, PAGE_SIZE)))
         pool.close()
         pool.join()
         print('Finish')
         # Print results
         for item in result:
             print(item.get())
+        print('Total process num: {}'.format(len(result)))
         # CSV file output:
         print('CREATE CSV OUTPUT FILE')
         with open(OUTPUT_CSV, "w", newline='') as csvfile:
