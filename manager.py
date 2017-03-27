@@ -3,6 +3,7 @@ import csv
 import time
 import redis
 import pymysql
+import logging
 import itertools
 import collections
 import multiprocessing
