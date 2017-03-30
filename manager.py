@@ -32,6 +32,7 @@ TIME_NOTE = True
 RESTORE_ACC_NBR = False
 
 # Redis connection
+CACHE_TABLE = 'net1'
 conn = redis.ConnectionPool(host='127.0.0.1', port=6379, db=0)
 rdb = redis.Redis(connection_pool=conn)
 
@@ -219,23 +220,42 @@ if __name__ == '__main__':
         print('CSV FILE CLOSE')
         # CSV file output:
         acc_count = 0
+        itime = stime
         print('CREATE NET CSV OUTPUT FILE')
+        # try:
+        #     with open(OUTPUT_NET_CSV, "w", newline='') as csvfile:
+        #         acc_nbr_list = rdb.smembers('acc')
+        #         for acc_nbr in acc_nbr_list:
+        #             acc_nbr = acc_nbr.decode('utf-8')
+        #             acc_count += 1
+        #             if acc_nbr in acc_nbr_fix:
+        #                 list_contact = rdb.hgetall('con_{}'.format(acc_nbr))
+        #                 for contactor in list_contact:
+        #                     if not rdb.sismember('net', contactor.decode('utf-8')):
+        #                         if contactor.decode('utf-8') in acc_nbr_fix:
+        #                             csvfile.write('{},{},{}\r\n'.format(acc_nbr, contactor.decode('utf-8'),
+        #                                                                 list_contact[contactor].decode('utf-8')))
+        #                 rdb.sadd('net', acc_nbr)
+        #             if acc_count % 100 == 0:
+        #                 print('acc_nbr counter = {}'.format(acc_count))
+        # except Exception as ex:
+        #     print('Exception: {}'.format(ex))
+        #
         try:
             with open(OUTPUT_NET_CSV, "w", newline='') as csvfile:
-                acc_nbr_list = rdb.smembers('acc')
-                for acc_nbr in acc_nbr_list:
-                    acc_nbr = acc_nbr.decode('utf-8')
+                for focal in acc_nbr_fix:
                     acc_count += 1
-                    if acc_nbr in acc_nbr_fix:
-                        list_contact = rdb.hgetall('con_{}'.format(acc_nbr))
-                        for contactor in list_contact:
-                            if not rdb.sismember('net', contactor.decode('utf-8')):
-                                if contactor.decode('utf-8') in acc_nbr_fix:
-                                    csvfile.write('{},{},{}\r\n'.format(acc_nbr, contactor.decode('utf-8'),
-                                                                        list_contact[contactor].decode('utf-8')))
-                        rdb.sadd('net', acc_nbr)
-                    if acc_count % 100 == 0:
-                        print('acc_nbr counter = {}'.format(acc_count))
+                    list_contact = rdb.hgetall('con_{}'.format(focal))
+                    for contactor in list_contact:
+                        if not rdb.sismember(CACHE_TABLE, contactor.decode('utf-8')):
+                            if contactor.decode('utf-8') in acc_nbr_fix:
+                                csvfile.write('{},{},{}\r\n'.format(focal, contactor.decode('utf-8'),
+                                                                    list_contact[contactor].decode('utf-8')))
+                    rdb.sadd(CACHE_TABLE, focal)
+                    if acc_count % 5000 == 0:
+                        costime = time.time() - itime
+                        print('focal counter = {}, cost {}s'.format(acc_count, costime))
+                        itime = time.time()
         except Exception as ex:
             print('Exception: {}'.format(ex))
         print('NET CSV FILE CLOSE')
