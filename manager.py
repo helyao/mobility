@@ -11,7 +11,8 @@ from itertools import islice
 
 # Variables
 # RUN_MODE = 'init'
-RUN_MODE = 'development'
+RUN_MODE = 'createnet'
+# RUN_MODE = 'development'
 PARALLEL_NUM = 4
 TOTAL_SIZE = [2162] # should match with $TABLE_NAME
 PAGE_SIZE = 1000
@@ -131,6 +132,54 @@ def do(tab, n, m):
     print('# END: process-num = {} and range {} to {} in table {}'.format(pro_name, n, m, tab))
     return duration
 
+def do2(tab, n, m):
+    global rdb
+    stime, ftime, duration = 0, 0, 0
+    pro_name = multiprocessing.current_process().name
+    print('> START: process-num = {} and range {} to {} in table {} when {}'.format(pro_name, n, m, tab,
+                                                                                    time.strftime('%Y-%m-%d %X',
+                                                                                                  time.localtime())))
+    # MySQL connnection
+    conn_mysql = pymysql.connect(host='localhost', port=3306, user=USERNAME, passwd=PASSWORD, db=DB_NAME)
+    mdb = conn_mysql.cursor()
+    # Select page content in MySQL
+    sql = "select serv_id, acc_nbr, calling_nbr, called_nbr from {} where id>={} and id<={}".format(tab, n, m)
+    mdb.execute(sql)
+    if TIME_NOTE:
+        # Record start time
+        stime = time.time()
+    # Task do
+    #   serv_id acc_nbr calling_nbr called_nbr
+    #   0       1       2           3
+    try:
+        for item in mdb:
+            # Number of contacts
+            if item[1] != item[2]:
+                icon = rdb.hget('con_{}'.format(item[1]), item[2])
+                if icon:
+                    icon = int(icon.decode('utf-8'))
+                    rdb.hset('con_{}'.format(item[1]), item[2], icon + 1)
+                else:
+                    rdb.hset('con_{}'.format(item[1]), item[2], 1)
+            if item[1] != item[3]:
+                icon = rdb.hget('con_{}'.format(item[1]), item[3])
+                if icon:
+                    icon = int(icon.decode('utf-8'))
+                    rdb.hset('con_{}'.format(item[1]), item[3], icon + 1)
+                else:
+                    rdb.hset('con_{}'.format(item[1]), item[3], 1)
+    except Exception as ex:
+        print('Exception passed.\n', ex)
+
+    if TIME_NOTE:
+        # Record finish time
+        ftime = time.time()
+        duration = ftime - stime
+        print('@ TIME: range {} to {} in table {} cost {}s'.format(n, m, tab, duration))
+    print('# END: process-num = {} and range {} to {} in table {}'.format(pro_name, n, m, tab))
+    return duration
+
+
 def init():
     global rdb
     # Clear Redis
@@ -153,6 +202,31 @@ if __name__ == '__main__':
     init()
     if RUN_MODE == 'production':
         pass
+
+    elif RUN_MODE == 'createnet':
+        result = []
+        # Multi-process
+        pool = multiprocessing.Pool(processes=PARALLEL_NUM)
+        # Traversal $TABLE_NAME
+        for num in range(len(TABLE_NAME)):
+            # MySQL page number
+            page_num = ((TOTAL_SIZE[num] + 1) // PAGE_SIZE) + 1
+            print('full data should divided into {} pages'.format(page_num))
+            for page in range(page_num):
+                print('page number = {}'.format(page))
+                start_item = page * PAGE_SIZE
+                if page == (page_num - 1):
+                    print('page: {} | page_num: {} | all_num: {}'.format(page, page_num, TOTAL_SIZE[num]))
+                    end_item = TOTAL_SIZE[num]
+                else:
+                    end_item = start_item + PAGE_SIZE
+                result.append(pool.apply_async(func=do2, args=(TABLE_NAME[num], start_item+1, end_item)))
+        pool.close()
+        pool.join()
+        print('Finish')
+        for item in result:
+            print(item.get())
+        print('Total process num: {}'.format(len(result)))
 
     elif RUN_MODE == 'development':
         result = []
